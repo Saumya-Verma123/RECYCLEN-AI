@@ -17,7 +17,19 @@ const backendBaseUrl = "http://localhost:5000";
           {result.detected_objects && result.detected_objects.length > 0 ? (
             result.detected_objects.map((obj, index) => (
               <li key={index}>
-                {obj.class} - Confidence: {(obj.confidence * 100).toFixed(2)}%
+                <strong>{obj.class}</strong><br />
+                Confidence: {(obj.confidence * 100).toFixed(2)}% <br />
+                Category: 
+                <span style={{
+                  color:
+                    obj.category === "Recyclable"
+                      ? "green"
+                      : obj.category === "Hazardous"
+                      ? "orange"
+                      : "red"
+                }}>
+                  {obj.category}
+                </span>
               </li>
             ))
           ) : (

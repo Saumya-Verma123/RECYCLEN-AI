@@ -3,7 +3,9 @@ import { TbCameraPlus } from "react-icons/tb";
 import { LuHistory } from "react-icons/lu";
 import { BsReverseLayoutTextSidebarReverse } from "react-icons/bs";
 import { TbLayoutSidebarLeftCollapseFilled } from "react-icons/tb";
-import { FaHome, FaRecycle, FaInfoCircle, FaUserCircle } from "react-icons/fa";
+import { FaHome, FaRecycle } from "react-icons/fa";
+import { FaMapMarkedAlt } from "react-icons/fa";
+
 
 import { FaRobot } from "react-icons/fa";
 
@@ -11,7 +13,7 @@ const menuItems = [
   { name: "Home", icon: <FaHome /> },
   {name: "Scan Waste", icon: <TbCameraPlus/>},
   { name: "Result", icon: <FaRecycle /> },
- 
+  { name: "Recycling Map", icon: <FaMapMarkedAlt /> }, 
   { name: "History", icon: <LuHistory /> },
   { name: "Chatbot", icon: <FaRobot /> },
  

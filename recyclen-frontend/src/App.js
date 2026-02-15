@@ -4,14 +4,17 @@ import { ReactComponent as RecycleLogo } from './logo.svg';
 import { ReactComponent as Group3 } from './Group 3.svg';
 import { ReactComponent as Group48 } from './Group 48.svg';
 import Navbar from './components/Navbar';
+import RecyclingMap from "./components/RecyclingMap";
 import History from './components/History';
 import ScanWaste from './components/ScanWaste';
 import Result from './components/Result';
-import Chatbot from './components/Chatbot';
+
 
 function App() {
   const [selectedMenu, setSelectedMenu] = useState('Home');
   const [scanResult, setScanResult] = useState(null);
+
+  console.log("Selected Menu:", selectedMenu);
 
   return (
     <div className="app-container flex">
@@ -24,9 +27,12 @@ function App() {
       ) : selectedMenu === 'Result' ? (
         <Result result={scanResult} />
      
-      ) : selectedMenu === 'Chatbot' ? (
-        <Chatbot />
-      ) : (
+      )
+        : selectedMenu === 'Recycling Map' ? (
+        <RecyclingMap />
+      ) //: selectedMenu === 'Chatbot' ? (
+       // <Chatbot />
+       : (
         <div className="landing-page">
           <div className="background-skyline">
             <Group48 />

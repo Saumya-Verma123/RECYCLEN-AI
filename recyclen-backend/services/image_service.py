@@ -12,6 +12,35 @@ from flask import jsonify
 from services.yolov8_model import run_inference
 import logging
 
+RECYCLABLE_MAP = {
+     #  RECYCLABLE
+    "black-hdpe": "Recyclable",
+    "hdpe": "Recyclable",
+    "pet": "Recyclable",
+    "plastic": "Recyclable",
+    "plastic-bottles": "Recyclable",
+    "metal": "Recyclable",
+    "metal-can": "Recyclable",
+    "paper": "Recyclable",
+    "paper-cardboard": "Recyclable",
+    "glass-items": "Recyclable",
+
+    #  NON-RECYCLABLE
+    "styrofoam": "Non-Recyclable",
+    "fabric": "Non-Recyclable",
+    "paper-disposal-items": "Non-Recyclable",
+    "mlp": "Non-Recyclable",  # Multi-layer plastic
+    "sup": "Non-Recyclable",  # Single-use plastic
+    "leftover-food": "Non-Recyclable",
+    "organic": "Non-Recyclable",
+
+    #  HAZARDOUS / SPECIAL WASTE
+    "e-waste": "Hazardous",
+    "hazardous": "Hazardous",
+    "broken glass": "Hazardous"
+}
+
+
 def handle_image_upload(data):
     if 'image' not in data:
         return jsonify({'error': 'No image provided'}), 400
@@ -41,6 +70,18 @@ def handle_image_upload(data):
         return jsonify({'error': 'Inference failed'}), 500
 
     import datetime
+
+    updated_detected_objects = []
+
+    for obj in result['detected_objects']:
+        label = obj.get("class", "").lower()
+        category = RECYCLABLE_MAP.get(label, "Unknown")
+
+        obj["category"] = category
+        updated_detected_objects.append(obj)
+
+        result['detected_objects'] = updated_detected_objects
+
     # === Prepare result data ===
     result_data = {
         "image_id": image_id,

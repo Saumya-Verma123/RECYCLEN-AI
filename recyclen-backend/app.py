@@ -3,6 +3,7 @@ from flask import Flask
 from flask_cors import CORS
 from routes.image_routes import image_bp
 from routes.chatbot_routes import chatbot_bp
+from routes.recycling_routes import recycling_bp
 from extensions.db import mongo, init_mongo
 
 from dotenv import load_dotenv
@@ -36,6 +37,8 @@ from routes.debug_routes import debug_bp
 
 app.register_blueprint(history_bp)
 app.register_blueprint(debug_bp)
+app.register_blueprint(recycling_bp)
+
 
 # === Home Route ===
 @app.before_request
