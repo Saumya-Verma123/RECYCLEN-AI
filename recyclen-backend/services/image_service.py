@@ -1,19 +1,12 @@
-
-import base64
 import uuid
 import os
+import logging
 from flask import jsonify
 from services.yolov8_model import run_inference
 from extensions.db import mongo
-import base64
-import uuid
-import os
-from flask import jsonify
-from services.yolov8_model import run_inference
-import logging
+import datetime
 
 RECYCLABLE_MAP = {
-     #  RECYCLABLE
     "black-hdpe": "Recyclable",
     "hdpe": "Recyclable",
     "pet": "Recyclable",
@@ -25,123 +18,97 @@ RECYCLABLE_MAP = {
     "paper-cardboard": "Recyclable",
     "glass-items": "Recyclable",
 
-    #  NON-RECYCLABLE
     "styrofoam": "Non-Recyclable",
     "fabric": "Non-Recyclable",
     "paper-disposal-items": "Non-Recyclable",
-    "mlp": "Non-Recyclable",  # Multi-layer plastic
-    "sup": "Non-Recyclable",  # Single-use plastic
+    "mlp": "Non-Recyclable",
+    "sup": "Non-Recyclable",
     "leftover-food": "Non-Recyclable",
     "organic": "Non-Recyclable",
 
-    #  HAZARDOUS / SPECIAL WASTE
     "e-waste": "Hazardous",
     "hazardous": "Hazardous",
     "broken glass": "Hazardous"
 }
 
 
-def handle_image_upload(data):
-    if 'image' not in data:
-        return jsonify({'error': 'No image provided'}), 400
-
-    image_data = data['image']
+def handle_image_upload(file):
 
     try:
-        header, encoded = image_data.split(",", 1)
-        image_bytes = base64.b64decode(encoded)
-    except Exception:
-        return jsonify({'error': 'Invalid image data'}), 400
+        # Generate unique filename
+        image_id = str(uuid.uuid4())
+        filename = f"{image_id}.jpg"
 
-    # Save with UUID to avoid conflicts
-    image_id = str(uuid.uuid4())
-    filename = f"{image_id}.jpg"
-    save_path = os.path.join("static", "uploads", filename)
-    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        upload_folder = os.path.join("static", "uploads")
+        os.makedirs(upload_folder, exist_ok=True)
 
-    with open(save_path, "wb") as f:
-        f.write(image_bytes)
+        save_path = os.path.join(upload_folder, filename)
 
-    # Run YOLOv8 inference
-    result = run_inference(save_path, output_filename=filename)
+        # Save uploaded file
+        file.save(save_path)
 
-    if result is None:
-        logging.error("Inference returned None")
-        return jsonify({'error': 'Inference failed'}), 500
+        logging.info(f"File saved at: {save_path}")
 
-    import datetime
+        # Run YOLO inference
+        result = run_inference(save_path, output_filename=filename)
 
-    updated_detected_objects = []
+        if result is None:
+            return jsonify({'error': 'Inference failed'}), 500
 
-    for obj in result['detected_objects']:
-        label = obj.get("class", "").lower()
-        category = RECYCLABLE_MAP.get(label, "Unknown")
+        # Add recyclable category
+        updated_objects = []
+        for obj in result['detected_objects']:
+            label = obj.get("class", "").lower()
+            category = RECYCLABLE_MAP.get(label, "Unknown")
+            obj["category"] = category
+            updated_objects.append(obj)
 
-        obj["category"] = category
-        updated_detected_objects.append(obj)
+        result['detected_objects'] = updated_objects
 
-        result['detected_objects'] = updated_detected_objects
+        # Prepare database record
+        result_data = {
+            "image_id": image_id,
+            "original_image": result['original_image'],
+            "annotated_image": result['annotated_image'],
+            "detected_objects": result['detected_objects'],
+            "timestamp": datetime.datetime.utcnow().isoformat()
+        }
 
-    # === Prepare result data ===
-    result_data = {
-        "image_id": image_id,
-        "original_image": result['original_image'],         # string path
-        "annotated_image": result['annotated_image'],
-        "annotation_file": result.get('annotation_file'),
-        "detected_objects": result['detected_objects'],
-        "timestamp": datetime.datetime.utcnow().isoformat()
-    }
+        # Insert into MongoDB
+        if mongo.db is not None:
+            mongo.db.detections.insert_one(result_data)
 
-    try:
-        import sys
-        logging.error(f"mongo object: {mongo}")
-        logging.error(f"mongo.cx object: {getattr(mongo, 'cx', None)}")
-        # === Insert into MongoDB ===
-        # Convert any non-serializable fields to strings
-        serializable_data = result_data.copy()
-        for key, value in serializable_data.items():
-            if not isinstance(value, (str, int, float, bool, type(None), list, dict)):
-                serializable_data[key] = str(value)
-        if mongo.db is None:
-            logging.error("MongoDB client db attribute is None")
-            return jsonify({'error': 'Database client not initialized'}), 500
-        # Use mongo.db to get the database explicitly
-        db = mongo.db
-        result_insert = db.detections.insert_one(serializable_data)
-        logging.info(f"Inserted detection record with id: {result_insert.inserted_id}")
+            mongo.db.images.insert_one({
+                "user_id": "guest",
+                "original_image_url": result['original_image'],
+                "processed_image_url": result['annotated_image'],
+                "timestamp": datetime.datetime.utcnow()
+            })
 
-        # === Prepare response ===
+        # Response
+        BASE_URL = "http://127.0.0.1:5000"
+
+# Convert Windows path to URL path
+        original_rel = result['original_image'].replace("\\", "/")
+        annotated_rel = result['annotated_image'].replace("\\", "/")
+
+        # Remove leading "./" if exists
+        if original_rel.startswith("./"):
+            original_rel = original_rel[2:]
+
+        if annotated_rel.startswith("./"):
+            annotated_rel = annotated_rel[2:]
+
         response = {
             "message": "Image processed successfully",
-            "original_image": f"/static/uploads/{os.path.basename(result['original_image'])}",
-            "annotated_image": f"/static/predictions/{os.path.basename(result['annotated_image'])}",
-            "detected_objects": result['detected_objects'],
-            "annotation_file": f"/annotations/{os.path.basename(result['annotation_file'])}" if result['annotation_file'] else None
+            "original_image": "/" + original_rel,
+            "annotated_image": "/" + annotated_rel,
+            "detected_objects": result['detected_objects']
         }
 
-        # === Insert into images collection for history ===
-        history_data = {
-            "user_id": "guest",
-            "original_image_url": response["original_image"],
-            "processed_image_url": response["annotated_image"],
-            "timestamp": __import__('datetime').datetime.utcnow()
-        }
-        db.images.insert_one(history_data)
+
+        return jsonify(response), 200
 
     except Exception as e:
-        import traceback
-        logging.error(f"MongoDB insert error: {e}")
-        logging.error(traceback.format_exc())
-        return jsonify({'error': 'Database insert failed'}), 500
-
-    # === Prepare response ===
-    response = {
-        "message": "Image processed successfully",
-        "original_image": f"/static/uploads/{os.path.basename(result['original_image'])}",
-        "annotated_image": f"/static/predictions/{os.path.basename(result['annotated_image'])}",
-        "detected_objects": result['detected_objects'],
-        "annotation_file": f"/annotations/{os.path.basename(result['annotation_file'])}" if result['annotation_file'] else None
-    }
-
-    return jsonify(response), 200
-   
+        logging.error(str(e))
+        return jsonify({"error": str(e)}), 500

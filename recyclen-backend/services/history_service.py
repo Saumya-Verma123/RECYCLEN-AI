@@ -1,37 +1,62 @@
-from extensions.db import mongo
-from bson import ObjectId
-
+from pymongo import MongoClient
+from bson.objectid import ObjectId
 import logging
+import os
+from extensions.db import mongo # Ensure you import your existing mongo instance
 
-def get_history(user_id=None):
-    # TEMPORARY: Fetch all detections unconditionally for testing
-    detections = mongo.db.detections.find()
-    def normalize_path(path):
-        if path:
-            # Replace all backslashes with forward slashes for URL compatibility
-            return path.replace("\\", "/").replace("\\\\", "/")
-        return path
-    results = []
-    for detection in detections:
-        timestamp = detection.get("timestamp", None)
-        detected_objects = detection.get("detected_objects", [])
-        logging.error(f"Detection image_id: {detection.get('image_id')}, timestamp: {timestamp}, detected_objects count: {len(detected_objects)}")
-        results.append({
-            "_id": str(detection.get("image_id", "")),
-            "original_image_url": normalize_path(detection.get("original_image", "")),
-            "processed_image_url": normalize_path(detection.get("annotated_image", "")),
-            "timestamp": timestamp,
-            "detected_objects": detected_objects
-        })
-    logging.error(f"get_history returned {len(results)} records")
-    if len(results) > 0:
-        logging.error(f"Sample record: {results[0]}")
-    return results
-
+def get_history(user_id):
+    """
+    Fetches all detection records.
+    """
+    try:
+        # Sort by newest first (-1)
+        cursor = mongo.db.detections.find().sort("timestamp", -1)
+        
+        history = []
+        for doc in cursor:
+            # Convert ObjectId to string
+            doc["_id"] = str(doc["_id"])
+            history.append(doc)
+            
+        return history
+    except Exception as e:
+        logging.error(f"Service Error (get_history): {e}")
+        return []
 
 def delete_image(user_id, image_id):
-    mongo.db.detections.delete_one({"_id": ObjectId(image_id), "user_id": user_id})
+    """
+    Deletes by ObjectId (if valid) OR by image_id (string UUID).
+    """
+    try:
+        query = None
+        
+        # 1. Try to treat it as a MongoDB ObjectId
+        if ObjectId.is_valid(image_id):
+            query = {"_id": ObjectId(image_id)}
+        else:
+            # 2. Fallback to custom UUID string
+            query = {"image_id": image_id}
 
+        # Delete from detections (main data)
+        result = mongo.db.detections.delete_one(query)
+        
+        # Also cleanup images collection just in case
+        mongo.db.images.delete_one(query)
+
+        return result.deleted_count > 0
+
+    except Exception as e:
+        logging.error(f"Service Error (delete_image): {e}")
+        return False
 
 def delete_all_history(user_id):
-    mongo.db.detections.delete_many({"user_id": user_id})
+    """
+    Wipes both collections.
+    """
+    try:
+        mongo.db.detections.delete_many({})
+        mongo.db.images.delete_many({})
+        return True
+    except Exception as e:
+        logging.error(f"Service Error (delete_all): {e}")
+        return False

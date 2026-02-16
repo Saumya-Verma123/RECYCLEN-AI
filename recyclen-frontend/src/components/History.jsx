@@ -1,176 +1,188 @@
 import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { 
+  Trash2, 
+  Archive, 
+  AlertCircle, 
+  Clock, 
+  Hash, 
+  Layers,
+  CheckCircle2,
+  Lightbulb
+} from 'lucide-react';
 import './History.css';
 
 const History = () => {
   const [history, setHistory] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     fetchHistory();
   }, []);
 
   const fetchHistory = async () => {
+    setLoading(true);
     try {
       const response = await fetch('http://localhost:5000/history/detections', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({}),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: "guest" }),
       });
-      if (!response.ok) {
-        console.error('Failed to fetch history');
+      
+      if (!response.ok) throw new Error('Failed to fetch history');
+      
+      const data = await response.json();
+      
+      // ✅ SAFETY CHECK: Prevent crashes if data is null or not an array
+      if (!data || !Array.isArray(data)) {
+        setHistory([]);
         return;
       }
-      const data = await response.json();
-      console.log("Fetched history data:", data);
-      // Map backend data to frontend format
-      console.log("Raw history data:", data);
+
       const mappedData = data.map((item) => {
-            let date = "Unknown Date";
-            if (item.timestamp) {
-              console.log("Raw timestamp:", item.timestamp);
-              // Improved date parsing with timezone fallback
-              let parsedDate = new Date(item.timestamp);
-              if (isNaN(parsedDate)) {
-                parsedDate = new Date(item.timestamp + "Z");
-              }
-              if (isNaN(parsedDate)) {
-                parsedDate = new Date(Number(item.timestamp));
-              }
-              if (!isNaN(parsedDate)) {
-                date = parsedDate.toLocaleDateString('en-GB');
-              }
-            }
-        let imageUrl = item.original_image_url;
-        if (imageUrl && !imageUrl.startsWith("http")) {
-          let normalizedPath = imageUrl.replace(/\\\\/g, '/').replace(/\\/g, '/');
-          if (!normalizedPath.startsWith('/')) {
-            normalizedPath = '/' + normalizedPath;
-          }
-          imageUrl = "http://localhost:5000" + normalizedPath;
+        // --- Date Logic ---
+        let date = "Unknown Date";
+        if (item.timestamp) {
+           let parsedDate = new Date(item.timestamp);
+           if (isNaN(parsedDate)) parsedDate = new Date(Number(item.timestamp));
+           if (!isNaN(parsedDate)) {
+             date = parsedDate.toLocaleDateString('en-GB', {
+                day: 'numeric', month: 'short', 
+                hour: '2-digit', minute: '2-digit'
+             });
+           }
         }
-        if (!imageUrl) {
-          imageUrl = "/default-image.jpg";
+
+        // --- Image URL Logic ---
+        let imageUrl = item.original_image_url || item.original_image;
+        if (imageUrl) {
+          const fileName = imageUrl.replace(/\\/g, '/').split('/').pop();
+          imageUrl = `http://localhost:5000/static/uploads/${fileName}`;
+        } else {
+          imageUrl = "https://placehold.co/400x300/022c22/34d399?text=No+Image";
         }
-        let wasteTypes = [];
-        if (item.detected_objects && Array.isArray(item.detected_objects) && item.detected_objects.length > 0) {
-          wasteTypes = item.detected_objects.map(obj => obj.class || "Unknown");
-        }
-        if (wasteTypes.length === 0) {
-          wasteTypes = ["N/A"];
-        }
+
+        const detectedObjects = item.detected_objects || [];
+
         return {
-          id: item._id || item.id || item.image_id || "Unknown ID",
+          id: item._id || item.image_id || "UNK",
+          displayId: (item.image_id || item._id || "").toString().substring(0, 8),
           date,
           imageUrl,
-          wasteTypes,
+          // ✅ AGENTIC LOGIC: Extract the AI's reasoning stored in the DB
+          wasteItems: detectedObjects.map(obj => ({
+            name: obj.class,
+            tip: obj.ai_suggestion || obj.suggestion || obj.tip || "Follow general disposal rules.",
+            category: obj.ai_category || obj.category || "General"
+          })),
+          count: detectedObjects.length,
+          confidence: detectedObjects[0] ? Math.round(detectedObjects[0].confidence * 100) : 0
         };
       });
-      setHistory(mappedData);
+
+      setHistory(mappedData); 
     } catch (error) {
-      console.error('Error fetching history:', error);
+      console.error('History Fetch Error:', error);
+      setHistory([]); 
+    } finally {
+      setLoading(false);
     }
   };
 
-  const clearAll = async () => {
-    try {
-      const response = await fetch('http://localhost:5000/history/clear', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({}),
-      });
-      if (!response.ok) {
-        console.error('Failed to clear history');
-        return;
-      }
-      setHistory([]);
-    } catch (error) {
-      console.error('Error clearing history:', error);
-    }
-  };
-
-  const removeItem = async (index) => {
-    const item = history[index];
+  const removeItem = async (id, index) => {
+    if (!window.confirm("Delete this scan record?")) return;
     try {
       const response = await fetch('http://localhost:5000/history/delete', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ image_id: item.id }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image_id: id, user_id: "guest" }),
       });
-      if (!response.ok) {
-        console.error('Failed to delete history item');
-        return;
+      if (response.ok) {
+        const newHistory = [...history];
+        newHistory.splice(index, 1);
+        setHistory(newHistory);
       }
-      const newHistory = [...history];
-      newHistory.splice(index, 1);
-      setHistory(newHistory);
     } catch (error) {
-      console.error('Error deleting history item:', error);
+      console.error('Delete Error:', error);
     }
   };
 
   return (
-    <div className="history-container">
-      <div className="history-header">
-        <h2 className="history-title">History</h2>
-        <button onClick={clearAll} className="clear-button">
-          Clear All
-        </button>
-      </div>
-      <div className="history-list">
-        {history.length === 0 ? (
-          <p className="history-empty">No history available.</p>
-        ) : (
-          history.map((item, index) => (
-            <div key={index} className="history-item">
-              <img
-                src={item.imageUrl}
-                alt={`Waste ${item.id}`}
-                className="history-image"
-                onError={(e) => { e.target.onerror = null; e.target.src = "/default-image.jpg"; }}
-              />
-              <div className="history-details">
-                <p>
-                  Image Id : <strong>{item.id}</strong>
-                </p>
-                <p>
-                  Detection Count <strong>{item.wasteTypes.length}</strong>
-                </p>
-                <p>Detected Waste Type :</p>
-                <div className="waste-tags">
-                  {item.wasteTypes.length > 0 ? (
-                    item.wasteTypes.map((type, idx) => (
-                      <span key={idx} className="waste-tag">
-                        {type}
-                      </span>
-                    ))
-                  ) : (
-                    <span className="waste-tag">N/A</span>
-                  )}
-                </div>
-              </div>
-              <button
-                onClick={() => removeItem(index)}
-                className="remove-button"
-                aria-label="Remove item"
-              >
-                &#x2715;
-              </button>
+    <div className="history-page">
+      <div className="history-container glass-panel">
+        <div className="history-header">
+          <div className="header-title">
+            <Archive size={28} className="text-emerald-400" />
+            <div>
+              <h2>Analysis Archive</h2>
+              <span className="badge">{(history || []).length} Records Found</span>
             </div>
-          ))
-        )}
+          </div>
+        </div>
+
+        <div className="history-content">
+          {loading ? (
+            <div className="loading-state">Syncing with Cloud...</div>
+          ) : history.length === 0 ? (
+            <div className="empty-state">
+              <AlertCircle size={48} />
+              <p>Your recycling journey starts here.</p>
+            </div>
+          ) : (
+            <div className="history-grid">
+              <AnimatePresence>
+                {history.map((item, index) => (
+                  <motion.div 
+                    key={item.id} 
+                    className="history-card"
+                    layout
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                  >
+                    <div className="card-image">
+                      <img src={item.imageUrl} alt="Scan Result" />
+                      <div className="card-overlay">
+                        <span className="date-pill"><Clock size={12} /> {item.date}</span>
+                      </div>
+                    </div>
+                    <div className="card-body">
+                      <div className="card-meta">
+                         <span className="id-tag"><Hash size={12} /> {item.displayId}</span>
+                         <span className="count-tag"><Layers size={12} /> {item.count} Items</span>
+                      </div>
+
+                      {/* ✅ PIPELINE DATA: Displaying the AI reasoning log */}
+                      <div className="history-items-list">
+                        {item.wasteItems.map((waste, i) => (
+                          <div key={i} className="history-item-detail">
+                            <div className="flex justify-between">
+                                <span className="waste-pill">{waste.name}</span>
+                                <span className="category-text text-[10px] text-emerald-500 uppercase font-bold">{waste.category}</span>
+                            </div>
+                            <p className="history-tip">
+                                <Lightbulb size={12} className="inline mr-1" /> {waste.tip}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="card-footer">
+                         <span className="status-text"><CheckCircle2 size={14} /> VERIFIED BY AI</span>
+                         <button onClick={() => removeItem(item.id, index)} className="delete-btn">
+                            <Trash2 size={16} />
+                         </button>
+                      </div>
+                    </div>
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+            </div>
+          )}
+        </div>
       </div>
-      
-      {/* <div className="history-debug">
-        <h3>Raw History Data (for debugging):</h3>
-        <pre>{JSON.stringify(history, null, 2)}</pre>
-      </div> */}
     </div>
   );
 };
 
+// ✅ REQUIRED EXPORT
 export default History;

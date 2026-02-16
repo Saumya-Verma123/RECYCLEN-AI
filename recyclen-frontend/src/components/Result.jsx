@@ -2,56 +2,52 @@ import React from 'react';
 import './Result.css';
 
 const Result = ({ result }) => {
+  // Global safety check
   if (!result) {
-    return <p>No scan result available.</p>;
+    return <div className="result-container"><p>No scan result available.</p></div>;
   }
 
-const backendBaseUrl = "http://localhost:5000";
+  const backendBaseUrl = "http://127.0.0.1:5000";
+
+  // Safety: Initialize detectedObjects as an array
+  const detectedObjects = result.detected_objects || [];
 
   return (
     <div className="result-container">
       <h2>Scan Result</h2>
-      <div>
-        <p>Detected Objects:</p>
-        <ul>
-          {result.detected_objects && result.detected_objects.length > 0 ? (
-            result.detected_objects.map((obj, index) => (
-              <li key={index}>
-                <strong>{obj.class}</strong><br />
-                Confidence: {(obj.confidence * 100).toFixed(2)}% <br />
-                Category: 
-                <span style={{
-                  color:
-                    obj.category === "Recyclable"
-                      ? "green"
-                      : obj.category === "Hazardous"
-                      ? "orange"
-                      : "red"
-                }}>
-                  {obj.category}
-                </span>
-              </li>
-            ))
-          ) : (
-            <li>No objects detected</li>
-          )}
-        </ul>
-      </div>
-      <div className="images">
-        <div>
-          <p>Original Image:</p>
-          {result.original_image ? (
-            <img src={`${backendBaseUrl}${result.original_image}`} alt="Original" />
-          ) : (
-            <p>No original image available</p>
-          )}
+      <div className="result-layout">
+        <div className="object-info">
+          <p>Detected Objects:</p>
+          <ul>
+            {detectedObjects.length > 0 ? (
+              detectedObjects.map((obj, index) => (
+                <li key={index} className="object-card">
+                  <strong>{obj.class}</strong> ({(obj.confidence * 100).toFixed(1)}%)
+                  <span className={`tag ${obj.category?.toLowerCase() || 'unknown'}`}>
+                    {obj.category || "Unclassified"}
+                  </span>
+                  {/* AI Suggestion integration */}
+                  {obj.suggestion && <p className="ai-tip">💡 {obj.suggestion}</p>}
+                </li>
+              ))
+            ) : (
+              <li>No objects detected</li>
+            )}
+          </ul>
         </div>
-        <div>
-          <p>Annotated Image:</p>
-          {result.annotated_image ? (
-            <img src={`${backendBaseUrl}${result.annotated_image}`} alt="Annotated" />
-          ) : (
-            <p>No annotated image available</p>
+
+        <div className="image-comparison">
+          {result.original_image && (
+            <div className="img-box">
+              <p>Original</p>
+              <img src={`${backendBaseUrl}${result.original_image}`} alt="Original" />
+            </div>
+          )}
+          {result.annotated_image && (
+            <div className="img-box">
+              <p>Analysis</p>
+              <img src={`${backendBaseUrl}${result.annotated_image}`} alt="Annotated" />
+            </div>
           )}
         </div>
       </div>
